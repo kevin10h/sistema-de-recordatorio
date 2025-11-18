@@ -49,7 +49,7 @@ El sistema genera recordatorios reales ejecutados por **Celery en background**.
 ---
 
 ## 🏗️ Arquitectura del Proyecto
-
+```md
 /backend
 ├── app/
 │ ├── main.py
@@ -69,9 +69,7 @@ El sistema genera recordatorios reales ejecutados por **Celery en background**.
 └── package.json
 
 docker-compose.yml
-
-yaml
-Copiar código
+```
 
 ---
 
