@@ -1,0 +1,123 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: pillreminder
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  auth:
+    build: ./services/auth
+    env_file: .env
+    depends_on:
+      - postgres
+    ports:
+      - "8001:8000"
+    environment:
+      - DATABASE_URL=postgresql://user:password@postgres:5432/pillreminder
+      - JWT_SECRET=supersecret
+      - JWT_ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_HOURS=8
+    command: sh -c "sleep 10 && uvicorn main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - ./services/auth:/app
+
+
+  medication:
+    build: ./services/medication
+    ports:
+      - "8002:8000"
+    depends_on:
+      - postgres
+    environment:
+      - DATABASE_URL=postgresql://user:password@postgres:5432/pillreminder
+    command: sh -c "sleep 10 && uvicorn main:app --host 0.0.0.0 --port 8000"  
+
+  reminder:
+    build: ./services/reminder
+    ports:
+      - "8003:8000"
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+      - auth
+      - notification
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://user:password@postgres:5432/pillreminder
+      - CELERY_BROKER_URL=pyamqp://user:password@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - NOTIFICATION_SERVICE_URL=http://notification:8000/send
+      - AUTH_SERVICE_URL=http://auth:8000
+    command: sh -c "sleep 10 && uvicorn main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - ./services/reminder:/app 
+
+  worker:
+    build: ./services/reminder
+    env_file: .env
+    command: sh -c "sleep 15 && celery -A worker_app.celery worker --loglevel=info"
+    depends_on:
+      - rabbitmq
+      - redis
+      - postgres
+      - auth
+      - notification
+    environment:
+      - DATABASE_URL=postgresql://user:password@postgres:5432/pillreminder
+      - CELERY_BROKER_URL=pyamqp://user:password@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - NOTIFICATION_SERVICE_URL=http://notification:8000/send
+      - AUTH_SERVICE_URL=http://auth:8000
+    volumes:
+      - ./services/reminder:/app  
+
+  notification:
+    build: ./services/notification
+    depends_on:
+      - rabbitmq
+    ports:
+      - "8004:8000"
+    environment:
+      EMAIL_HOST: smtp.gmail.com
+      EMAIL_PORT: 587
+      EMAIL_USER: kevin.huaman.y@uni.pe
+      EMAIL_PASSWORD: dcknxerzxkgkxibm
+    volumes:
+      - ./services/notification:/app   
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    stdin_open: true
+    tty: true
+    environment:
+      # Permite que React sepa la URL interna de los servicios
+      - VITE_API_REMINDER_URL=http://reminder:8000
+    depends_on:
+      - reminder
+
+volumes:
+  pgdata:
